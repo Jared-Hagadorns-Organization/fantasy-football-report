@@ -2,16 +2,16 @@ require('dotenv').config();
 const cron = require('node-cron');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
-const Anthropic = require('@anthropic-ai/sdk');
 
 const SLEEPER_BASE = 'https://api.sleeper.app/v1';
+const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions';
 const SLEEPER_USERNAME = 'jaredhagadorn';
 const EMAIL_TO = 'jaredahagadorn@gmail.com';
-const MODEL = 'claude-sonnet-4-20250514';
+const MODEL = 'openai/gpt-4o';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// ─── Season helpers ───────────────────────────────────────────────────────────
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function getCurrentSeason() {
   const now = new Date();
@@ -114,7 +114,30 @@ async function fetchSleeperData() {
   return { user, season, leagueDetails, playerMap };
 }
 
-// ─── Claude analyses ──────────────────────────────────────────────────────────
+// ─── GitHub Models (GPT-4o via personal PAT) ─────────────────────────────────
+
+async function callAI(prompt, system, retries = 3) {
+  const messages = system
+    ? [{ role: 'system', content: system }, { role: 'user', content: prompt }]
+    : [{ role: 'user', content: prompt }];
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post(
+        GITHUB_MODELS_URL,
+        { model: MODEL, messages, max_tokens: 1500 },
+        { headers: { Authorization: `Bearer ${process.env.GH_MODELS_TOKEN}`, 'Content-Type': 'application/json' }, timeout: 60000 }
+      );
+      return response.data.choices[0].message.content;
+    } catch (e) {
+      const status = e.response?.status;
+      const body = JSON.stringify(e.response?.data) || e.message;
+      console.log(`  AI attempt ${attempt}/${retries} failed: HTTP ${status} — ${body}`);
+      if (attempt < retries) { await sleep(attempt * 5000); }
+    }
+  }
+  return 'Analysis unavailable — AI call failed (see logs)';
+}
 
 async function analyzeRoster(leagueDetail) {
   const { league, myRosterPlayers, myPicks, standings } = leagueDetail;
@@ -129,58 +152,25 @@ async function analyzeRoster(leagueDetail) {
     ? myPicks.map((p) => `${p.season} Round ${p.round}${p.type === 'acquired' ? ' (acquired)' : ''}`).join(', ')
     : 'None';
 
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 1200,
-    system: [
-      {
-        type: 'text',
-        text: 'You are an expert dynasty fantasy football analyst. Give concise, actionable roster evaluations that account for both current players and future draft capital. Use letter grades (A–F). Be direct and specific.',
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: [
-      {
-        role: 'user',
-        content: `League: "${league.name}" | Current record: ${record}\n\nRoster:\n${rosterText}\n\nFuture draft picks: ${picksText}\n\nProvide:\n1. Overall roster grade (A–F) with 2-sentence justification\n2. Top 3 strengths (including pick capital if relevant)\n3. Top 3 weaknesses or injury concerns\n4. One trade recommendation`,
-      },
-    ],
-  });
-
-  return response.content.find((b) => b.type === 'text')?.text ?? '';
+  return callAI(
+    `League: "${league.name}" | Current record: ${record}\n\nRoster:\n${rosterText}\n\nFuture draft picks: ${picksText}\n\nProvide:\n1. Overall roster grade (A–F) with 2-sentence justification\n2. Top 3 strengths (including pick capital if relevant)\n3. Top 3 weaknesses or injury concerns\n4. One trade recommendation`,
+    'You are an expert dynasty fantasy football analyst. Give concise, actionable roster evaluations that account for both current players and future draft capital. Use letter grades (A–F). Be direct and specific.'
+  );
 }
 
 async function analyzeLeague(leagueDetail) {
   const { league, standings } = leagueDetail;
 
   const standingsText = standings
-    .map(
-      (s, i) =>
-        `${i + 1}. ${s.username}${s.isMe ? ' (YOU)' : ''} — ${s.wins}-${s.losses}-${s.ties} | PF: ${s.pointsFor} | PA: ${s.pointsAgainst}`
-    )
+    .map((s, i) => `${i + 1}. ${s.username}${s.isMe ? ' (YOU)' : ''} — ${s.wins}-${s.losses}-${s.ties} | PF: ${s.pointsFor} | PA: ${s.pointsAgainst}`)
     .join('\n');
 
   const myRank = standings.findIndex((s) => s.isMe) + 1;
 
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 1200,
-    system: [
-      {
-        type: 'text',
-        text: 'You are an expert fantasy football analyst. Give sharp, insightful competitive analysis. Be honest about position in the standings.',
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: [
-      {
-        role: 'user',
-        content: `League: "${league.name}"\n\nStandings:\n${standingsText}\n\nI am ranked ${myRank} of ${standings.length}.\n\nProvide:\n1. My competitive position (2–3 sentences)\n2. Who the biggest threats are and why\n3. Playoff odds assessment\n4. One strategic priority for the next week`,
-      },
-    ],
-  });
-
-  return response.content.find((b) => b.type === 'text')?.text ?? '';
+  return callAI(
+    `League: "${league.name}"\n\nStandings:\n${standingsText}\n\nI am ranked ${myRank} of ${standings.length}.\n\nProvide:\n1. My competitive position (2–3 sentences)\n2. Who the biggest threats are and why\n3. Playoff odds assessment\n4. One strategic priority for the next week`,
+    'You are an expert fantasy football analyst. Give sharp, insightful competitive analysis. Be honest about position in the standings.'
+  );
 }
 
 async function fetchPlayerNews(myRosterPlayers) {
@@ -190,45 +180,10 @@ async function fetchPlayerNews(myRosterPlayers) {
     .map((p) => `${p.name} (${p.position}, ${p.team})`)
     .join(', ');
 
-  const messages = [
-    {
-      role: 'user',
-      content: `Search for the latest fantasy football injury reports and news for these players: ${players}. For each player provide a 1–2 sentence update on their status, any injuries, and fantasy outlook for this week.`,
-    },
-  ];
-
-  let finalText = '';
-
-  for (let i = 0; i < 8; i++) {
-    const response = await anthropic.messages.create(
-      {
-        model: MODEL,
-        max_tokens: 2000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages,
-      },
-      { headers: { 'anthropic-beta': 'web-search-2025-03-05' } }
-    );
-
-    const textBlocks = response.content.filter((b) => b.type === 'text');
-    if (textBlocks.length) finalText = textBlocks.map((b) => b.text).join('\n');
-
-    if (response.stop_reason === 'end_turn') break;
-    if (response.stop_reason !== 'tool_use') break;
-
-    const toolUseBlocks = response.content.filter((b) => b.type === 'tool_use');
-    messages.push({ role: 'assistant', content: response.content });
-    messages.push({
-      role: 'user',
-      content: toolUseBlocks.map((b) => ({
-        type: 'tool_result',
-        tool_use_id: b.id,
-        content: b.input?.query ? `Search executed for: ${b.input.query}` : 'Search executed.',
-      })),
-    });
-  }
-
-  return finalText;
+  return callAI(
+    `Provide injury status and fantasy football outlook for each of these players based on the most recent information you have. Give 1–2 sentences per player. Bold each player name.\n\nPlayers: ${players}`,
+    'You are a fantasy football analyst with up-to-date knowledge of player injury statuses, depth charts, and weekly outlooks.'
+  );
 }
 
 // ─── Email HTML builder ───────────────────────────────────────────────────────

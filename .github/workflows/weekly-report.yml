@@ -2,8 +2,11 @@ name: Weekly Fantasy Football Report
 
 on:
   schedule:
-    - cron: '0 13 * * 6'
+    - cron: '0 13 * * 6'  # Saturday 1pm UTC (9am Eastern)
   workflow_dispatch:
+
+permissions:
+  models: read
 
 jobs:
   send-report:
@@ -16,6 +19,6 @@ jobs:
       - run: npm install
       - run: node -e "require('./index').sendWeeklyReport()"
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

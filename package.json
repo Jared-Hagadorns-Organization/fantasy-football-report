@@ -1,25 +1,17 @@
 {
   "name": "fantasy-football-report",
   "version": "1.0.0",
-  "description": "Weekly Sleeper fantasy football email report powered b Gemini 2.5 Flash",
+  "description": "Weekly Sleeper fantasy football email report powered by GPT-4.1 via GitHub Models",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/jaredahagadorn-ai/fantasy-football-report.git"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/jaredahagadorn-ai/fantasy-football-report/issues"
-  },
-  "homepage": "https://github.com/jaredahagadorn-ai/fantasy-football-report#readme",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
+    "openai": "^4.0.0",
     "axios": "^1.15.0",
     "dotenv": "^17.4.2",
     "node-cron": "^4.2.1",

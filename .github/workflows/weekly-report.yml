@@ -5,9 +5,6 @@ on:
     - cron: '0 13 * * 6'  # Saturday 1pm UTC (9am Eastern)
   workflow_dispatch:
 
-permissions:
-  models: read
-
 jobs:
   send-report:
     runs-on: ubuntu-latest
@@ -19,6 +16,6 @@ jobs:
       - run: npm install
       - run: node -e "require('./index').sendWeeklyReport()"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

@@ -1,7 +1,7 @@
 {
   "name": "fantasy-football-report",
   "version": "1.0.0",
-  "description": "Weekly Sleeper fantasy football email report powered by GPT-4.1 via GitHub Models",
+  "description": "Weekly Sleeper fantasy football email report powered by Claude AI",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -11,9 +11,10 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "axios": "^1.15.0",
-    "dotenv": "^17.4.2",
-    "node-cron": "^4.2.1",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "node-cron": "^3.0.3",
     "nodemailer": "^8.0.5"
   }
 }

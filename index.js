@@ -130,23 +130,33 @@ function computeMyPicks(myRosterId, tradedPicks, league) {
   return myPicks.sort((a, b) => a.season !== b.season ? a.season.localeCompare(b.season) : a.round - b.round);
 }
 
-async function callAI(prompt, retries=3) {
-  for (let attempt=1; attempt<=retries; attempt++) {
+async function callAI(prompt) {
+  const token = process.env.GITHUB_TOKEN;
+  console.log(`  Token: ${token ? `set (len=${token.length}, prefix=${token.slice(0,7)})` : 'NOT SET'}`);
+
+  const candidates = [
+    { url: 'https://models.github.ai/inference/chat/completions',    model: 'openai/gpt-4o' },
+    { url: 'https://models.github.ai/inference/v1/chat/completions', model: 'openai/gpt-4o' },
+    { url: 'https://models.github.ai/inference/chat/completions',    model: 'gpt-4o' },
+    { url: 'https://models.github.ai/inference/v1/chat/completions', model: 'gpt-4o' },
+  ];
+
+  for (const { url, model } of candidates) {
     try {
       const response = await axios.post(
-        GITHUB_MODELS_URL,
-        { model: MODEL, messages: [{ role: 'user', content: prompt }], max_tokens: 1500 },
-        { headers: { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`, 'Content-Type': 'application/json' }, timeout: 60000 }
+        url,
+        { model, messages: [{ role: 'user', content: prompt }], max_tokens: 1500 },
+        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 60000 }
       );
+      console.log(`  Success with ${url} / ${model}`);
       return response.data.choices[0].message.content;
     } catch(e) {
       const status = e.response?.status;
-      const body = JSON.stringify(e.response?.data || e.message);
-      console.log(`  AI attempt ${attempt}/${retries} failed: HTTP ${status} — ${body}`);
-      if (attempt < retries) { const w=attempt*5000; console.log('  Retrying in '+(w/1000)+'s...'); await sleep(w); }
-      else { return `Analysis unavailable: HTTP ${status} — ${body}`; }
+      const body = JSON.stringify(e.response?.data) || e.message;
+      console.log(`  ${url} / ${model} -> HTTP ${status} -- ${body}`);
     }
   }
+  return 'Analysis unavailable -- all GitHub Models endpoints failed (see logs)';
 }
 
 function buildEmailHtml(dateStr, sections) {
